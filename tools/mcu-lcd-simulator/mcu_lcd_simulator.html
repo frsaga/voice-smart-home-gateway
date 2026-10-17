@@ -1,0 +1,525 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MCU LCD Simulator</title>
+  <style>
+    :root {
+      --page: #e9ecef;
+      --panel: #f8f9fa;
+      --ink: #1f2328;
+      --muted: #667085;
+      --line: #b7bec8;
+      --accent: #0b6bcb;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--page);
+      color: var(--ink);
+      font-family: Arial, "Microsoft YaHei", sans-serif;
+    }
+
+    body {
+      display: grid;
+      grid-template-columns: minmax(360px, 560px) minmax(280px, 1fr);
+      gap: 20px;
+      padding: 24px;
+      align-items: start;
+    }
+
+    .screen-wrap {
+      width: min(100%, 560px);
+      aspect-ratio: 1 / 1;
+      background: #111;
+      border: 1px solid #111;
+      display: grid;
+      place-items: center;
+      box-shadow: 0 18px 36px rgba(20, 25, 30, 0.18);
+    }
+
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      image-rendering: auto;
+      background: #000;
+    }
+
+    .controls {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      padding: 16px;
+      display: grid;
+      gap: 14px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 118px 1fr;
+      gap: 10px;
+      align-items: center;
+    }
+
+    label {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    input,
+    select,
+    textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      font: 14px/1.35 Arial, "Microsoft YaHei", sans-serif;
+      padding: 8px 9px;
+      border-radius: 0;
+    }
+
+    textarea {
+      min-height: 86px;
+      resize: vertical;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+
+    button {
+      border: 1px solid #0a4f97;
+      background: var(--accent);
+      color: #fff;
+      font: 600 14px Arial, "Microsoft YaHei", sans-serif;
+      padding: 9px 12px;
+      border-radius: 0;
+      cursor: pointer;
+    }
+
+    button.secondary {
+      background: #fff;
+      color: var(--ink);
+      border-color: var(--line);
+    }
+
+    .meta {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    @media (max-width: 860px) {
+      body {
+        grid-template-columns: 1fr;
+        padding: 14px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="screen-wrap" aria-label="240 by 240 MCU LCD render">
+    <canvas id="lcd" width="960" height="960"></canvas>
+  </main>
+
+  <aside class="controls">
+    <div class="row">
+      <label for="preset">显示状态</label>
+      <select id="preset">
+        <option value="ai">AI 控制结果</option>
+        <option value="idle">AI 等待状态</option>
+        <option value="voice">语音识别状态</option>
+      </select>
+    </div>
+
+    <div class="row">
+      <label for="timeText">时间行</label>
+      <input id="timeText" value="Time 07-06 16:31:43">
+    </div>
+
+    <div class="row">
+      <label for="weatherText">天气行</label>
+      <input id="weatherText" value="Nanchang Thunder 31.2C 68%">
+    </div>
+
+    <div class="row">
+      <label for="aiTitle">AI 标题</label>
+      <input id="aiTitle" value="AI Advice warning">
+    </div>
+
+    <div class="row">
+      <label for="aiTarget">AI 目标</label>
+      <input id="aiTarget" value="Multi action | LAMP+FAN+CUR">
+    </div>
+
+    <div class="row">
+      <label for="advice">AI 内容</label>
+      <textarea id="advice">Turn on fan now. Ventilate to lower heat and humidity. Target 26.5C and 60%RH. Check after 5 min.</textarea>
+    </div>
+
+    <div class="grid">
+      <div>
+        <label for="fan">风扇</label>
+        <select id="fan">
+          <option value="on">ON</option>
+          <option value="off">OFF</option>
+        </select>
+      </div>
+      <div>
+        <label for="lamp">灯光</label>
+        <select id="lamp">
+          <option value="off">OFF</option>
+          <option value="on">ON</option>
+        </select>
+      </div>
+      <div>
+        <label for="curtain">窗帘</label>
+        <select id="curtain">
+          <option value="close">CLOSE</option>
+          <option value="open">OPEN</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div>
+        <label for="temp">温度</label>
+        <input id="temp" value="27.7C">
+      </div>
+      <div>
+        <label for="humi">湿度</label>
+        <input id="humi" value="75%">
+      </div>
+      <div>
+        <label for="lux">光照</label>
+        <input id="lux" value="124lx">
+      </div>
+    </div>
+
+    <div class="grid">
+      <button id="renderBtn">渲染</button>
+      <button id="downloadBtn" class="secondary">导出 PNG</button>
+      <button id="resetBtn" class="secondary">重置</button>
+    </div>
+
+    <div class="meta">
+      LCD logical resolution: 240 × 240 px<br>
+      Backing canvas: 960 × 960 px, rendered at 4× for clear text<br>
+      Colors: RGB565 constants converted from firmware definitions
+    </div>
+  </aside>
+
+  <script>
+    const canvas = document.getElementById("lcd");
+    const ctx = canvas.getContext("2d", { alpha: false });
+    const RENDER_SCALE = 4;
+    ctx.imageSmoothingEnabled = true;
+
+    const C = {
+      WHITE: rgb565(0xffff),
+      YELLOW: rgb565(0xffe0),
+      BRRED: rgb565(0xfc07),
+      RED: rgb565(0xf800),
+      GBLUE: rgb565(0x07ff),
+      GREEN: rgb565(0x07e0),
+      BLUE: rgb565(0x001f),
+      BLACK: rgb565(0x0000)
+    };
+
+    const layout = {
+      HEADER_TIME_Y: 0,
+      HEADER_WEATHER_Y: 16,
+      HEADER_H: 32,
+      AI_INFO_Y: 32,
+      AI_INFO_H: 112,
+      VOICE_Y: 144,
+      DEVICE_UI_Y: 160,
+      DEVICE_UI_W: 80,
+      DEVICE_UI_H: 32,
+      SENSOR_UI_Y: 192,
+      SENSOR_UI_W: 80,
+      SENSOR_UI_H: 48,
+      TEXT_X: 5,
+      TEXT_W: 230
+    };
+
+    const defaults = {
+      ai: {
+        preset: "ai",
+        timeText: "Time 07-06 16:31:43",
+        weatherText: "Nanchang Thunder 31.2C 68%",
+        aiTitle: "AI Advice warning",
+        aiTarget: "Multi action | LAMP+FAN+CUR",
+        advice: "Turn on fan now. Ventilate to lower heat and humidity. Target 26.5C and 60%RH. Check after 5 min.",
+        fan: "on",
+        lamp: "off",
+        curtain: "close",
+        temp: "27.7C",
+        humi: "75%",
+        lux: "124lx"
+      },
+      idle: {
+        preset: "idle",
+        timeText: "Time 07-06 16:31:43",
+        weatherText: "Nanchang Thunder 31.2C 68%",
+        aiTitle: "AI: waiting",
+        aiTarget: "Say something",
+        advice: "Waiting ai_plan\nUART2 ready",
+        fan: "off",
+        lamp: "off",
+        curtain: "close",
+        temp: "27.6C",
+        humi: "75%",
+        lux: "126lx"
+      },
+      voice: {
+        preset: "voice",
+        timeText: "Time 07-06 16:31:43",
+        weatherText: "Nanchang Thunder 31.2C 68%",
+        aiTitle: "AI Advice warning",
+        aiTarget: "Voice command | fan on",
+        advice: "ASR text received. Execute fan control and update device status.",
+        fan: "on",
+        lamp: "off",
+        curtain: "close",
+        temp: "27.7C",
+        humi: "75%",
+        lux: "124lx"
+      }
+    };
+
+    const ids = [
+      "preset", "timeText", "weatherText", "aiTitle", "aiTarget",
+      "advice", "fan", "lamp", "curtain", "temp", "humi", "lux"
+    ];
+
+    document.getElementById("preset").addEventListener("change", event => {
+      applyPreset(event.target.value);
+      render();
+    });
+    document.getElementById("renderBtn").addEventListener("click", render);
+    document.getElementById("resetBtn").addEventListener("click", () => {
+      applyPreset(document.getElementById("preset").value);
+      render();
+    });
+    document.getElementById("downloadBtn").addEventListener("click", () => {
+      const link = document.createElement("a");
+      link.download = "mcu-lcd-240x240.png";
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+    });
+
+    ids.forEach(id => {
+      const el = document.getElementById(id);
+      el.addEventListener("input", render);
+    });
+
+    applyPreset("ai");
+    render();
+
+    function rgb565(v) {
+      const r = ((v >> 11) & 0x1f) * 255 / 31;
+      const g = ((v >> 5) & 0x3f) * 255 / 63;
+      const b = (v & 0x1f) * 255 / 31;
+      return `rgb(${Math.round(r)},${Math.round(g)},${Math.round(b)})`;
+    }
+
+    function state() {
+      return Object.fromEntries(ids.map(id => [id, document.getElementById(id).value]));
+    }
+
+    function applyPreset(name) {
+      const data = defaults[name] || defaults.ai;
+      ids.forEach(id => {
+        document.getElementById(id).value = data[id];
+      });
+    }
+
+    function render() {
+      const s = state();
+      ctx.setTransform(RENDER_SCALE, 0, 0, RENDER_SCALE, 0, 0);
+      ctx.imageSmoothingEnabled = true;
+      clear(C.BLACK);
+      drawHeader(s);
+      if (s.preset === "idle") {
+        drawAiIdle(s);
+      } else {
+        drawAiPlan(s);
+      }
+      drawVoice(s);
+      drawDeviceUi(s);
+      drawSensorUi(s);
+    }
+
+    function clear(color) {
+      ctx.fillStyle = color;
+      ctx.fillRect(0, 0, 240, 240);
+    }
+
+    function fill(x, y, w, h, color) {
+      ctx.fillStyle = color;
+      ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
+    }
+
+    function box(x, y, w, h, color) {
+      fill(x, y, w, 1, color);
+      fill(x, y + h - 1, w, 1, color);
+      fill(x, y, 1, h, color);
+      fill(x + w - 1, y, 1, h, color);
+    }
+
+    function circle(x, y, r, color) {
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function text(x, y, value, color, size = 8, weight = "700") {
+      ctx.fillStyle = color;
+      ctx.font = `${weight} ${size}px Menlo, Consolas, "Courier New", monospace`;
+      ctx.textBaseline = "top";
+      ctx.fillText(value, Math.round(x), Math.round(y));
+    }
+
+    function centered(x, y, w, value, color) {
+      const width = value.length * 8;
+      const tx = width < w ? x + Math.floor((w - width) / 2) : x;
+      text(tx, y, value, color);
+    }
+
+    function wrapped(x, y, w, h, value, color) {
+      const cols = Math.max(1, Math.floor(w / 8));
+      const rawLines = String(value).split(/\n/);
+      const lines = [];
+      rawLines.forEach(line => {
+        let current = "";
+        line.split(/\s+/).filter(Boolean).forEach(word => {
+          if (!current) {
+            current = word;
+          } else if ((current + " " + word).length <= cols) {
+            current += " " + word;
+          } else {
+            lines.push(current);
+            current = word;
+          }
+        });
+        if (current) lines.push(current);
+        if (!line.trim()) lines.push("");
+      });
+      const maxLines = Math.floor(h / 16);
+      lines.slice(0, maxLines).forEach((line, i) => text(x, y + i * 16, line, color));
+    }
+
+    function drawHeader(s) {
+      fill(0, layout.HEADER_TIME_Y, 240, layout.HEADER_H, C.BLACK);
+      text(layout.TEXT_X, layout.HEADER_TIME_Y, s.timeText.slice(0, 28), C.GREEN);
+      text(layout.TEXT_X, layout.HEADER_WEATHER_Y, s.weatherText.slice(0, 28), C.BLUE);
+    }
+
+    function drawAiPlan(s) {
+      const level = s.aiTitle.toLowerCase().includes("danger")
+        ? C.RED
+        : s.aiTitle.toLowerCase().includes("warning")
+          ? C.YELLOW
+          : C.GREEN;
+      fill(0, layout.AI_INFO_Y, 240, layout.AI_INFO_H, C.BLACK);
+      text(layout.TEXT_X, layout.AI_INFO_Y, s.aiTitle.slice(0, 28), level);
+      text(layout.TEXT_X, layout.AI_INFO_Y + 16, s.aiTarget.slice(0, 28), C.WHITE);
+      wrapped(layout.TEXT_X, layout.AI_INFO_Y + 32, layout.TEXT_W, 64, s.advice, level);
+    }
+
+    function drawAiIdle(s) {
+      fill(0, layout.AI_INFO_Y, 240, layout.AI_INFO_H, C.BLACK);
+      wrapped(
+        layout.TEXT_X,
+        layout.AI_INFO_Y,
+        layout.TEXT_W,
+        layout.AI_INFO_H,
+        `${s.aiTitle}\n${s.aiTarget}\n${s.advice}`,
+        C.YELLOW
+      );
+    }
+
+    function drawVoice(s) {
+      const isVoice = s.preset === "voice";
+      const value = isVoice ? "VOICE: OK" : "VOICE: IDLE";
+      fill(0, layout.VOICE_Y, 240, 16, C.BLACK);
+      text(layout.TEXT_X, layout.VOICE_Y, value, isVoice ? C.GREEN : C.GREEN);
+    }
+
+    function drawDeviceUi(s) {
+      const fanOn = s.fan === "on";
+      const lampOn = s.lamp === "on";
+      const curtainOpen = s.curtain === "open";
+      tile(0, layout.DEVICE_UI_Y, "FAN " + (fanOn ? "ON" : "OFF"), fanOn ? "D2 70%" : "L0 0%", fanOn, true);
+      tile(80, layout.DEVICE_UI_Y, "LAMP " + (lampOn ? "ON" : "OFF"), lampOn ? "L2 60%" : "L0 0%", lampOn, true);
+      tile(160, layout.DEVICE_UI_Y, "CUR " + (curtainOpen ? "100%" : "0%"), curtainOpen ? "OPEN" : "CLOSE", curtainOpen, true);
+    }
+
+    function tile(x, y, label, detail, active, valid) {
+      const color = !valid ? C.YELLOW : active ? C.GREEN : C.WHITE;
+      fill(x, y, 80, 32, C.BLACK);
+      box(x + 2, y, 76, 32, color);
+      centered(x, y + 1, 80, label.slice(0, 9), color);
+      centered(x, y + 16, 80, detail.slice(0, 9), C.WHITE);
+    }
+
+    function drawSensorUi(s) {
+      thermometer(0, layout.SENSOR_UI_Y, s.temp);
+      drop(80, layout.SENSOR_UI_Y, s.humi);
+      sun(160, layout.SENSOR_UI_Y, s.lux);
+    }
+
+    function thermometer(x, y, value) {
+      fill(x, y, 80, 48, C.BLACK);
+      box(x + 2, y + 1, 76, 46, C.BRRED);
+      const cx = x + 40;
+      fill(cx - 5, y + 7, 11, 28, C.BRRED);
+      fill(cx - 2, y + 10, 5, 27, C.BLACK);
+      circle(cx, y + 35, 10, C.BRRED);
+      circle(cx, y + 35, 6, C.BLACK);
+      centered(x, y + 16, 80, value, C.WHITE);
+    }
+
+    function drop(x, y, value) {
+      fill(x, y, 80, 48, C.BLACK);
+      box(x + 2, y + 1, 76, 46, C.GBLUE);
+      const cx = x + 40;
+      circle(cx, y + 29, 16, C.GBLUE);
+      for (let row = 0; row < 16; row += 1) {
+        fill(cx - row, y + 6 + row, row * 2 + 1, 1, C.GBLUE);
+      }
+      circle(cx, y + 29, 10, C.BLACK);
+      centered(x, y + 16, 80, value, C.WHITE);
+    }
+
+    function sun(x, y, value) {
+      fill(x, y, 80, 48, C.BLACK);
+      box(x + 2, y + 1, 76, 46, C.YELLOW);
+      const cx = x + 40;
+      const cy = y + 24;
+      circle(cx, cy, 16, C.YELLOW);
+      fill(cx - 27, cy, 10, 1, C.YELLOW);
+      fill(cx + 18, cy, 10, 1, C.YELLOW);
+      fill(cx, cy - 27, 1, 10, C.YELLOW);
+      fill(cx, cy + 18, 1, 10, C.YELLOW);
+      fill(cx - 21, cy - 18, 8, 1, C.YELLOW);
+      fill(cx + 14, cy - 18, 8, 1, C.YELLOW);
+      fill(cx - 21, cy + 18, 8, 1, C.YELLOW);
+      fill(cx + 14, cy + 18, 8, 1, C.YELLOW);
+      circle(cx, cy, 11, C.BLACK);
+      centered(x, y + 16, 80, value, C.WHITE);
+    }
+  </script>
+</body>
+</html>
