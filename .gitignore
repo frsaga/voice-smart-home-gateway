@@ -1,0 +1,10 @@
+.pio/
+build/
+*.log
+*.hex
+*.bin
+*.axf
+*.o
+**/AppConfig.h
+.env*
+.DS_Store
